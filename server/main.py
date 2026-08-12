@@ -1,7 +1,10 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from routes.member import member_router
+from routes.dashboard import dashboard_router 
+
 from database.connection import engine, Base
 import models.member  # noqa: F401  (테이블 등록을 위해 import 필요)
 
@@ -23,6 +26,8 @@ app.add_middleware(
 )
 
 app.include_router(member_router, prefix="/api/auth")
+app.include_router(dashboard_router, prefix="/api")
+
 
 
 @app.get("/")

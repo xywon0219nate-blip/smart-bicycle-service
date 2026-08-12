@@ -1,4 +1,4 @@
-from sqlalchemy import String, Enum, DateTime, Integer
+from sqlalchemy import String, Enum, DateTime, Integer, Boolean
 from sqlalchemy.orm import Mapped, mapped_column
 from database.connection import Base
 from datetime import datetime, timezone
@@ -21,13 +21,18 @@ class UserModel(Base):
       String(255),
       nullable=False,
    )
-   name: Mapped[str] = mapped_column(
+   nickname: Mapped[str] = mapped_column(
       String(100),
       nullable=False,
    )
    riding_styles: Mapped[str] = mapped_column(
       String(255),
       nullable=True,
+   )
+   agree_marketing: Mapped[bool] = mapped_column(
+      Boolean,
+      nullable=False,
+      default=False,
    )
    role: Mapped[str] = mapped_column(
       Enum("USER", "ADMIN", name="member_role"),

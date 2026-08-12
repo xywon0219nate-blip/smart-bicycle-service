@@ -17,11 +17,20 @@ class LoginItem(BaseModel):
 
 
 class SignupItem(BaseModel):
+   nickname: str
    email: EmailStr
    password: str
    passwordConfirm: str
-   name: str
    ridingStyles: Optional[List[str]] = []
+   agreeRequired: bool = False
+   agreeMarketing: bool = False
+
+   @field_validator("nickname")
+   @classmethod
+   def nickname_not_blank(cls, v):
+      if not v.strip():
+         raise ValueError("닉네임을 입력해주세요.")
+      return v
 
    @field_validator("password")
    @classmethod
@@ -37,15 +46,24 @@ class SignupItem(BaseModel):
          raise ValueError("비밀번호가 일치하지 않습니다.")
       return v
 
+   @field_validator("agreeRequired")
+   @classmethod
+   def agree_required_must_be_true(cls, v):
+      if not v:
+         raise ValueError("필수 약관에 동의해주세요.")
+      return v
+
    model_config = ConfigDict(
       json_schema_extra={
          "examples": [
             {
-               "email": "test1@example.com",
-               "password": "pw123456",
-               "passwordConfirm": "pw123456",
-               "name": "김민준",
+               "nickname": "김민준",
+               "email": "test1@naver.com",
+               "password": "12341234",
+               "passwordConfirm": "12341234",
                "ridingStyles": ["로드", "MTB"],
+               "agreeRequired": True,
+               "agreeMarketing": True,
             }
          ]
       }
@@ -55,6 +73,6 @@ class SignupItem(BaseModel):
 class Member(BaseModel):
    id: int
    email: str
-   name: str
+   nickname: str
    role: str
    created_at: datetime

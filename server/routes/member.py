@@ -15,7 +15,7 @@ REFRESH_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7일
 def _to_user_response(userModel: UserModel) -> dict:
    return {
       "id": str(userModel.id),
-      "name": userModel.name,
+      "nickname": userModel.nickname,
       "handle": "@" + userModel.email.split("@")[0],
       "email": userModel.email,
    }
@@ -23,14 +23,27 @@ def _to_user_response(userModel: UserModel) -> dict:
 
 # 로그인
 @member_router.post("/login")
-async def login(loginItem: LoginItem, response: Response, db: Session = Depends(get_db)) -> dict:
+async def login(loginItem: LoginItem,
+                  response: Response, 
+                     db: Session = Depends(get_db)) -> dict:
    userModel = db.query(UserModel).filter(UserModel.email == loginItem.email).first()
 
-   if userModel is None or not verify_password(loginItem.password, userModel.pwd):
+   # ===== 수정 시작: "미가입 이메일"과 "비밀번호 틀림"을 서로 다른 에러로 분리 =====
+   # 기존에는 userModel is None(가입 안 됨)이든 비밀번호가 틀렸든
+   # 무조건 같은 401 + 같은 메시지("이메일 또는 비밀번호가 올바르지 않습니다")를 반환해서
+   # 프론트에서 두 경우를 구분할 방법이 없었음.
+   if userModel is None:
+      raise HTTPException(
+         status_code=status.HTTP_404_NOT_FOUND,
+         detail="가입되지 않은 이메일입니다.",
+      )
+
+   if not verify_password(loginItem.password, userModel.pwd):
       raise HTTPException(
          status_code=status.HTTP_401_UNAUTHORIZED,
-         detail="이메일 또는 비밀번호가 올바르지 않습니다.",
+         detail="비밀번호가 올바르지 않습니다.",
       )
+   # ===== 수정 끝 =====
 
    access_token = create_access_token(str(userModel.id), userModel.role)
    refresh_token = create_refresh_token(str(userModel.id), userModel.role)
@@ -58,14 +71,17 @@ async def logout(response: Response) -> dict:
 
 # 이메일 중복 체크
 @member_router.get("/emailCheck/{email}")
-async def email_check(email: str, db: Session = Depends(get_db)) -> dict:
+async def email_check(email: str, 
+                        db: Session = Depends(get_db)) -> dict:
    userModel = db.query(UserModel).filter(UserModel.email == email).first()
    return {"isFind": userModel is not None}
 
 
 # 회원가입
 @member_router.post("/signup")
-async def signup(signupItem: SignupItem, response: Response, db: Session = Depends(get_db)) -> dict:
+async def signup(signupItem: SignupItem, 
+                  response: Response, 
+                  db: Session = Depends(get_db)) -> dict:
    existing = db.query(UserModel).filter(UserModel.email == signupItem.email).first()
    if existing:
       raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
@@ -73,8 +89,9 @@ async def signup(signupItem: SignupItem, response: Response, db: Session = Depen
    userModel = UserModel(
       email=signupItem.email,
       pwd=hash_password(signupItem.password),
-      name=signupItem.name,
+      nickname=signupItem.nickname,
       riding_styles=",".join(signupItem.ridingStyles or []),
+      agree_marketing=signupItem.agreeMarketing,
    )
    db.add(userModel)
    db.commit()

@@ -7,13 +7,14 @@ create database pedalup_db
     collate utf8mb4_unicode_ci;
 
 # database 사용
-use pedalup_db;
-
-# 선택
+use pedalup_db;# 선택
 select database();
 
 # 테이블 리스트 조회 (처음엔 비어있음 - 서버 실행하면 user 테이블 자동 생성됨)
 show tables;
 
 # 서버 실행 후 회원가입 데이터 확인용
-select * from member;
+select * from user;
+SELECT id, email, nickname, riding_styles, agree_marketing, role, created_at FROM user;
+
+# DELETE FROM user WHERE email = 'test1@naver.com';
