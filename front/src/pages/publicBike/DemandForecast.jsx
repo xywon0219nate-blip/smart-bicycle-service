@@ -1,344 +1,429 @@
-import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Sparkles, TrendingUp, Users, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+	AlertTriangle,
+	CheckCircle2,
+	ChevronDown,
+	ChevronUp,
+	Sparkles,
+	TrendingUp,
+	Users,
+	X,
+} from "lucide-react";
 import Button from "../../components/common/Button";
 import Loading from "../../components/common/Loading";
 import publicBikeService from "../../services/publicBikeService";
-import { FORECAST_STATIONS } from "../../constants/mockData";
 import { deriveDateFeatures } from "../../utils/forecastFeatures";
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => h);
 const todayISODate = () => new Date().toISOString().slice(0, 10);
 
-const fieldLabel = "mb-2 block text-xs text-gray-400";
-const fieldInput =
-  "w-full rounded-lg border border-border bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-white/40";
+// ===== 수정 시작: mockData(FORECAST_STATIONS) 대신 실제 학습된 모델 2개를 조합해서 예측 =====
+// station_demand_model.pkl (대여소별 기본 패턴) x weather_effect_model_202606.pkl (날씨 배율)
+// 대여소 목록도 더 이상 mockData.js가 아니라 실제 station_master.csv 기반 백엔드에서 가져온다.
 
 const LEVEL_STYLES = {
-  높음: { text: "text-danger", bar: "bg-danger", border: "border-danger/30", chip: "border-danger/30 bg-danger/10 text-danger" },
-  보통: { text: "text-warn", bar: "bg-warn", border: "border-warn/30", chip: "border-warn/30 bg-warn/10 text-warn" },
-  낮음: { text: "text-neon", bar: "bg-neon", border: "border-neon/30", chip: "border-neon/30 bg-neon/10 text-neon" },
+	높음: {
+		text: "text-danger",
+		bar: "bg-danger",
+		border: "border-danger/30",
+		chip: "border-danger/30 bg-danger/10 text-danger",
+	},
+	보통: {
+		text: "text-warn",
+		bar: "bg-warn",
+		border: "border-warn/30",
+		chip: "border-warn/30 bg-warn/10 text-warn",
+	},
+	낮음: {
+		text: "text-neon",
+		bar: "bg-neon",
+		border: "border-neon/30",
+		chip: "border-neon/30 bg-neon/10 text-neon",
+	},
 };
 
+const fieldLabel = "mb-2 block text-xs text-gray-400";
+const fieldInput =
+	"w-full rounded-lg border border-border bg-black/30 px-4 py-3 text-sm text-white outline-none focus:border-white/40";
+
 function ReadOnlyField({ label, value }) {
-  return (
-    <div className="rounded-lg border border-border bg-black/20 px-4 py-3">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-white">{value}</p>
-    </div>
-  );
+	return (
+		<div className="rounded-lg border border-border bg-black/20 px-4 py-3">
+			<p className="text-xs text-gray-500">{label}</p>
+			<p className="mt-1 text-sm font-semibold text-white">{value}</p>
+		</div>
+	);
 }
 
 export default function DemandForecast() {
-  const [stationId, setStationId] = useState(FORECAST_STATIONS[0].id);
-  const [date, setDate] = useState(todayISODate());
-  const [hour, setHour] = useState(new Date().getHours());
-  const [temperature, setTemperature] = useState(20);
-  const [humidity, setHumidity] = useState(50);
-  const [rainfall, setRainfall] = useState(0);
-  const [windSpeed, setWindSpeed] = useState(2.0);
-  const [recentHourlyRentals, setRecentHourlyRentals] = useState(FORECAST_STATIONS[0].recentHourlyRentals);
-  const [prevDaySameHourRentals, setPrevDaySameHourRentals] = useState(
-    Math.round(FORECAST_STATIONS[0].recentHourlyRentals * 1.1),
-  );
-  const [rolling7dSameHourAvg, setRolling7dSameHourAvg] = useState(
-    Math.round(FORECAST_STATIONS[0].recentHourlyRentals * 1.05),
-  );
+	// 대여소 선택 (구 필터 -> 대여소 목록, 둘 다 실제 백엔드에서 로드)
+	const [districts, setDistricts] = useState([]);
+	const [district, setDistrict] = useState("");
+	const [stations, setStations] = useState([]);
+	const [stationId, setStationId] = useState(null);
+	const [stationsLoading, setStationsLoading] = useState(true);
 
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [resultOpen, setResultOpen] = useState(true);
-  const [pendingRequest, setPendingRequest] = useState(null); // 백엔드 미연동 시 확인용 요청 payload
-  const [errorMessage, setErrorMessage] = useState("");
+	const [date, setDate] = useState(todayISODate());
+	const [hour, setHour] = useState(new Date().getHours());
+	const [temperature, setTemperature] = useState(20);
+	const [humidity, setHumidity] = useState(50);
+	const [rainfall, setRainfall] = useState(0);
+	const [windSpeed, setWindSpeed] = useState(2.0);
 
-  const station = FORECAST_STATIONS.find((s) => s.id === stationId);
-  const dateFeatures = useMemo(() => deriveDateFeatures(date), [date]);
+	const [loading, setLoading] = useState(false);
+	const [result, setResult] = useState(null);
+	const [resultOpen, setResultOpen] = useState(true);
+	const [errorMessage, setErrorMessage] = useState("");
 
-  const handleStationChange = (e) => {
-    const next = FORECAST_STATIONS.find((s) => s.id === Number(e.target.value));
-    setStationId(next.id);
-    setRecentHourlyRentals(next.recentHourlyRentals);
-    setPrevDaySameHourRentals(Math.round(next.recentHourlyRentals * 1.1));
-    setRolling7dSameHourAvg(Math.round(next.recentHourlyRentals * 1.05));
-    setResult(null);
-    setPendingRequest(null);
-  };
+	const dateFeatures = useMemo(() => deriveDateFeatures(date), [date]);
+	const selectedStation =
+		stations.find((s) => s.station_id === stationId) ?? null;
 
-  const handleRun = async () => {
-    const payload = {
-      stationId,
-      date,
-      hour,
-      isHoliday: dateFeatures?.isHoliday ?? false,
-      temperature,
-      humidity,
-      rainfall,
-      windSpeed,
-      recentHourlyRentals,
-      prevDaySameHourRentals,
-      rolling7dSameHourAvg,
-    };
+	// 최초 진입 시 구 목록 로드
+	useEffect(() => {
+		publicBikeService
+			.getForecastDistricts()
+			.then(setDistricts)
+			.catch(() => setDistricts([]));
+	}, []);
 
-    setLoading(true);
-    setResult(null);
-    setErrorMessage("");
-    setPendingRequest(null);
-    try {
-      const data = await publicBikeService.getForecast(payload);
-      setResult(data);
-      setResultOpen(true);
-    } catch {
-      setPendingRequest(payload);
-      setErrorMessage("FastAPI 예측 API(POST /api/ai/bike/forecast)가 아직 연동되지 않았습니다.");
-    } finally {
-      setLoading(false);
-    }
-  };
+	// 구를 고르면(또는 처음 진입 시) 그 구의 대여소 목록을 불러옴
+	useEffect(() => {
+		setStationsLoading(true);
+		publicBikeService
+			.getForecastStations(district || undefined)
+			.then((list) => {
+				setStations(list);
+				setStationId(list[0]?.station_id ?? null);
+			})
+			.catch(() => {
+				setStations([]);
+				setStationId(null);
+			})
+			.finally(() => setStationsLoading(false));
+	}, [district]);
 
-  const levelStyle = LEVEL_STYLES[result?.demand_level] ?? LEVEL_STYLES.보통;
-  const availableForBar = result?.available_bikes ?? result?.predicted_demand ?? 0;
-  const barPct = station ? Math.min(100, Math.round((availableForBar / station.rackCount) * 100)) : 0;
+	const handleRun = async () => {
+		if (!stationId) return;
 
-  return (
-    <div>
-      <p className="mb-1 text-sm font-semibold text-bike">AI 예측</p>
-      <h2 className="mb-6 text-2xl font-extrabold text-white">수요·혼잡도 예측</h2>
+		setLoading(true);
+		setResult(null);
+		setErrorMessage("");
+		try {
+			const data = await publicBikeService.getStationForecast({
+				stationId,
+				date,
+				hour,
+				temperature,
+				humidity,
+				rainfall,
+				windSpeed,
+			});
+			setResult(data);
+			setResultOpen(true);
+		} catch (err) {
+			const message =
+				err.response?.data?.detail?.[0]?.msg ||
+				err.response?.data?.detail ||
+				"예측에 실패했습니다. 잠시 후 다시 시도해주세요.";
+			setErrorMessage(
+				typeof message === "string" ? message : "입력값을 다시 확인해주세요.",
+			);
+		} finally {
+			setLoading(false);
+		}
+	};
 
-      {!loading && result && (
-        <div className={`mb-8 overflow-hidden rounded-xl border bg-card ${levelStyle.border}`}>
-          <div className="flex items-center justify-between px-6 py-4">
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className={`h-5 w-5 ${levelStyle.text}`} />
-              <p className="text-sm font-semibold text-white">예측 완료</p>
-              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${levelStyle.chip}`}>
-                {result.predicted_demand}건 · {result.demand_level}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setResultOpen((v) => !v)}
-                className="rounded-lg p-1.5 text-gray-400 hover:bg-white/5 hover:text-white"
-                aria-label={resultOpen ? "결과 접기" : "결과 펼치기"}
-              >
-                {resultOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </button>
-              <button
-                type="button"
-                onClick={() => setResult(null)}
-                className="rounded-lg p-1.5 text-gray-400 hover:bg-white/5 hover:text-white"
-                aria-label="결과 닫기"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+	const levelStyle = LEVEL_STYLES[result?.demand_level] ?? LEVEL_STYLES.보통;
+	const barPct = result
+		? Math.min(100, Math.round(result.capacity_ratio * 100))
+		: 0;
+	// ===== 수정 끝 =====
 
-          {resultOpen && (
-            <div className="border-t border-border px-6 pb-6 pt-5">
-              <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="rounded-lg border border-border bg-black/20 p-5">
-                  <p className="mb-3 flex items-center gap-2 text-xs text-gray-400">
-                    <TrendingUp className="h-4 w-4" />
-                    예측 대여 수요
-                  </p>
-                  <p className={`text-4xl font-extrabold ${levelStyle.text}`}>
-                    {result.predicted_demand}
-                    <span className="ml-1 text-lg font-semibold text-gray-400">건</span>
-                  </p>
-                  <p className="mt-2 text-xs text-gray-500">
-                    {station.name} · {date} {String(hour).padStart(2, "0")}:00
-                  </p>
-                </div>
-                <div className="rounded-lg border border-border bg-black/20 p-5">
-                  <p className="mb-3 flex items-center justify-end gap-2 text-xs text-gray-400">
-                    <Users className="h-4 w-4" />
-                    혼잡도
-                  </p>
-                  <p className={`text-right text-4xl font-extrabold ${levelStyle.text}`}>
-                    {barPct}
-                    <span className="ml-1 text-lg font-semibold text-gray-400">%</span>
-                  </p>
-                  <p className="mb-2 mt-2 text-right text-xs text-gray-500">
-                    {result.demand_level} · {availableForBar}/{station.rackCount}대
-                  </p>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-                    <div className={`h-full rounded-full ${levelStyle.bar}`} style={{ width: `${barPct}%` }} />
-                  </div>
-                </div>
-              </div>
+	return (
+		<div>
+			<p className="mb-1 text-sm font-semibold text-bike">AI 예측</p>
+			<h2 className="mb-6 text-2xl font-extrabold text-white">
+				대여소별 수요·혼잡도 예측
+			</h2>
 
-              {result.message && (
-                <div className="flex items-start gap-2 rounded-lg border border-border bg-black/20 p-4 text-sm text-gray-300">
-                  <AlertTriangle className={`mt-0.5 h-4 w-4 shrink-0 ${levelStyle.text}`} />
-                  {result.message}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+			{!loading && result && (
+				<div
+					className={`mb-8 overflow-hidden rounded-xl border bg-card ${levelStyle.border}`}
+				>
+					<div className="flex items-center justify-between px-6 py-4">
+						<div className="flex items-center gap-3">
+							<CheckCircle2 className={`h-5 w-5 ${levelStyle.text}`} />
+							<p className="text-sm font-semibold text-white">
+								{result.station.name}
+							</p>
+							<span
+								className={`rounded-full border px-3 py-1 text-xs font-semibold ${levelStyle.chip}`}
+							>
+								{result.predicted_demand}건 · {result.demand_level}
+							</span>
+						</div>
+						<div className="flex items-center gap-2">
+							<button
+								type="button"
+								onClick={() => setResultOpen((v) => !v)}
+								className="rounded-lg p-1.5 text-gray-400 hover:bg-white/5 hover:text-white"
+								aria-label={resultOpen ? "결과 접기" : "결과 펼치기"}
+							>
+								{resultOpen ? (
+									<ChevronUp className="h-4 w-4" />
+								) : (
+									<ChevronDown className="h-4 w-4" />
+								)}
+							</button>
+							<button
+								type="button"
+								onClick={() => setResult(null)}
+								className="rounded-lg p-1.5 text-gray-400 hover:bg-white/5 hover:text-white"
+								aria-label="결과 닫기"
+							>
+								<X className="h-4 w-4" />
+							</button>
+						</div>
+					</div>
 
-      {!loading && errorMessage && (
-        <div className="mb-8 rounded-xl border border-warn/30 bg-warn/5 p-6">
-          <div className="mb-3 flex items-center gap-2 text-warn">
-            <AlertTriangle className="h-4 w-4" />
-            <p className="text-sm font-semibold">{errorMessage}</p>
-          </div>
-          <p className="mb-3 text-xs text-gray-400">
-            아래는 백엔드 연동 시 <code>POST /api/ai/bike/forecast</code>로 전송될 요청 데이터입니다.
-          </p>
-          <pre className="overflow-x-auto rounded-lg bg-black/40 p-4 text-xs text-gray-300">
-            {JSON.stringify(pendingRequest, null, 2)}
-          </pre>
-        </div>
-      )}
+					{resultOpen && (
+						<div className="border-t border-border px-6 pb-6 pt-5">
+							<div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+								<div className="rounded-lg border border-border bg-black/20 p-5">
+									<p className="mb-3 flex items-center gap-2 text-xs text-gray-400">
+										<TrendingUp className="h-4 w-4" />
+										예측 대여 수요
+									</p>
+									<p className={`text-4xl font-extrabold ${levelStyle.text}`}>
+										{result.predicted_demand}
+										<span className="ml-1 text-lg font-semibold text-gray-400">
+											건
+										</span>
+									</p>
+									<p className="mt-2 text-xs text-gray-500">
+										{result.station.name} · {date}{" "}
+										{String(hour).padStart(2, "0")}:00
+									</p>
+								</div>
+								<div className="rounded-lg border border-border bg-black/20 p-5">
+									<p className="mb-3 flex items-center justify-end gap-2 text-xs text-gray-400">
+										<Users className="h-4 w-4" />
+										정원 대비 혼잡도
+									</p>
+									<p
+										className={`text-right text-4xl font-extrabold ${levelStyle.text}`}
+									>
+										{barPct}
+										<span className="ml-1 text-lg font-semibold text-gray-400">
+											%
+										</span>
+									</p>
+									<p className="mb-2 mt-2 text-right text-xs text-gray-500">
+										{result.predicted_demand}/{result.station.rack_count}대 ·
+										날씨 배율 {result.weather_factor}x
+									</p>
+									<div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+										<div
+											className={`h-full rounded-full ${levelStyle.bar}`}
+											style={{ width: `${barPct}%` }}
+										/>
+									</div>
+								</div>
+							</div>
 
-      <div className="rounded-xl border border-border bg-card p-6">
-        {/* A. 대여소 */}
-        <label className={fieldLabel}>대여소</label>
-        <select value={stationId} onChange={handleStationChange} className={`${fieldInput} mb-3`}>
-          {FORECAST_STATIONS.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <div className="mb-6 grid grid-cols-2 gap-3">
-          <ReadOnlyField label="지역" value={station.district} />
-          <ReadOnlyField label="대여소 정원" value={`${station.rackCount}대`} />
-        </div>
+							{result.message && (
+								<div className="flex items-start gap-2 rounded-lg border border-border bg-black/20 p-4 text-sm text-gray-300">
+									<AlertTriangle
+										className={`mt-0.5 h-4 w-4 shrink-0 ${levelStyle.text}`}
+									/>
+									{result.message}
+								</div>
+							)}
+						</div>
+					)}
+				</div>
+			)}
 
-        {/* B. 예측 시점 */}
-        <p className="mb-4 text-sm font-semibold text-white">예측 시점</p>
-        <div className="mb-3 grid grid-cols-2 gap-3">
-          <div>
-            <label className={fieldLabel}>예측 날짜</label>
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={fieldInput} />
-          </div>
-          <div>
-            <label className={fieldLabel}>예측 시간</label>
-            <select value={hour} onChange={(e) => setHour(Number(e.target.value))} className={fieldInput}>
-              {HOUR_OPTIONS.map((h) => (
-                <option key={h} value={h}>
-                  {String(h).padStart(2, "0")}:00
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className="mb-6 grid grid-cols-2 gap-3">
-          <ReadOnlyField label="요일" value={dateFeatures?.dayOfWeekLabel ?? "-"} />
-          <ReadOnlyField label="휴일 여부" value={dateFeatures?.holidayLabel ?? "-"} />
-        </div>
+			{!loading && errorMessage && (
+				<div className="mb-8 rounded-xl border border-warn/30 bg-warn/5 p-6">
+					<div className="flex items-center gap-2 text-warn">
+						<AlertTriangle className="h-4 w-4" />
+						<p className="text-sm font-semibold">{errorMessage}</p>
+					</div>
+				</div>
+			)}
 
-        {/* C. 예상 기상 조건 */}
-        <p className="mb-4 text-sm font-semibold text-white">예상 기상 조건</p>
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <div>
-            <label className={fieldLabel}>기온 (℃)</label>
-            <input
-              type="number"
-              value={temperature}
-              onChange={(e) => setTemperature(Number(e.target.value))}
-              className={fieldInput}
-            />
-          </div>
-          <div>
-            <label className={fieldLabel}>습도 (%)</label>
-            <input
-              type="number"
-              value={humidity}
-              onChange={(e) => setHumidity(Number(e.target.value))}
-              className={fieldInput}
-            />
-          </div>
-          <div>
-            <label className={fieldLabel}>강수량 (mm)</label>
-            <input
-              type="number"
-              value={rainfall}
-              onChange={(e) => setRainfall(Number(e.target.value))}
-              className={fieldInput}
-            />
-          </div>
-          <div>
-            <label className={fieldLabel}>풍속 (m/s)</label>
-            <input
-              type="number"
-              step="0.1"
-              value={windSpeed}
-              onChange={(e) => setWindSpeed(Number(e.target.value))}
-              className={fieldInput}
-            />
-          </div>
-        </div>
+			<div className="rounded-xl border border-border bg-card p-6">
+				{/* A. 대여소 (실제 station_master.csv 기반) */}
+				<p className="mb-4 text-sm font-semibold text-white">대여소</p>
+				<div className="mb-3 grid grid-cols-2 gap-3">
+					<div>
+						<label className={fieldLabel}>지역(구)</label>
+						<select
+							value={district}
+							onChange={(e) => setDistrict(e.target.value)}
+							className={fieldInput}
+						>
+							<option value="">전체</option>
+							{districts.map((d) => (
+								<option key={d} value={d}>
+									{d}
+								</option>
+							))}
+						</select>
+					</div>
+					<div>
+						<label className={fieldLabel}>대여소</label>
+						<select
+							value={stationId ?? ""}
+							onChange={(e) => setStationId(Number(e.target.value))}
+							className={fieldInput}
+							disabled={stationsLoading || stations.length === 0}
+						>
+							{stationsLoading && <option>불러오는 중...</option>}
+							{!stationsLoading && stations.length === 0 && (
+								<option>대여소 없음</option>
+							)}
+							{stations.map((s) => (
+								<option key={s.station_id} value={s.station_id}>
+									{s.name}
+								</option>
+							))}
+						</select>
+					</div>
+				</div>
+				<div className="mb-6 grid grid-cols-2 gap-3">
+					<ReadOnlyField
+						label="지역"
+						value={selectedStation?.district ?? "-"}
+					/>
+					<ReadOnlyField
+						label="대여소 정원"
+						value={selectedStation ? `${selectedStation.rack_count}대` : "-"}
+					/>
+				</div>
 
-        {/* D. 과거 이용 패턴 */}
-        <p className="mb-4 text-sm font-semibold text-white">과거 이용 패턴</p>
-        <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div>
-            <label className={fieldLabel}>최근 1시간 대여량</label>
-            <input
-              type="number"
-              value={recentHourlyRentals}
-              onChange={(e) => setRecentHourlyRentals(Number(e.target.value))}
-              className={fieldInput}
-            />
-          </div>
-          <div>
-            <label className={fieldLabel}>전일 동일 시간대 대여량</label>
-            <input
-              type="number"
-              value={prevDaySameHourRentals}
-              onChange={(e) => setPrevDaySameHourRentals(Number(e.target.value))}
-              className={fieldInput}
-            />
-          </div>
-          <div>
-            <label className={fieldLabel}>최근 7일 동일 시간대 평균</label>
-            <input
-              type="number"
-              value={rolling7dSameHourAvg}
-              onChange={(e) => setRolling7dSameHourAvg(Number(e.target.value))}
-              className={fieldInput}
-            />
-          </div>
-        </div>
+				{/* B. 예측 시점 */}
+				<p className="mb-4 text-sm font-semibold text-white">예측 시점</p>
+				<div className="mb-3 grid grid-cols-2 gap-3">
+					<div>
+						<label className={fieldLabel}>예측 날짜</label>
+						<input
+							type="date"
+							value={date}
+							onChange={(e) => setDate(e.target.value)}
+							className={fieldInput}
+						/>
+					</div>
+					<div>
+						<label className={fieldLabel}>예측 시간</label>
+						<select
+							value={hour}
+							onChange={(e) => setHour(Number(e.target.value))}
+							className={fieldInput}
+						>
+							{HOUR_OPTIONS.map((h) => (
+								<option key={h} value={h}>
+									{String(h).padStart(2, "0")}:00
+								</option>
+							))}
+						</select>
+					</div>
+				</div>
+				<div className="mb-6 grid grid-cols-2 gap-3">
+					<ReadOnlyField
+						label="요일"
+						value={dateFeatures?.dayOfWeekLabel ?? "-"}
+					/>
+					<ReadOnlyField
+						label="주말 여부"
+						value={dateFeatures?.isWeekend ? "주말" : "평일"}
+					/>
+				</div>
 
-        {/* 예측에 사용되는 데이터 요약 */}
-        <div className="mb-6 rounded-lg border border-border bg-black/20 p-4">
-          <p className="mb-3 text-sm font-semibold text-white">예측에 사용되는 데이터</p>
-          <dl className="space-y-2 text-sm">
-            {[
-              ["대여소", station.name],
-              ["지역", station.district],
-              ["날짜", date],
-              ["시간", `${String(hour).padStart(2, "0")}:00`],
-              ["요일", dateFeatures?.dayOfWeekLabel ?? "-"],
-              ["휴일 여부", dateFeatures?.holidayLabel ?? "-"],
-              ["기온", `${temperature}℃`],
-              ["습도", `${humidity}%`],
-              ["강수량", `${rainfall}mm`],
-              ["풍속", `${windSpeed}m/s`],
-              ["최근 1시간 대여량", `${recentHourlyRentals}건`],
-              ["전일 동일 시간대 대여량", `${prevDaySameHourRentals}건`],
-              ["최근 7일 동일 시간대 평균", `${rolling7dSameHourAvg}건`],
-            ].map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between">
-                <dt className="text-gray-400">{k}</dt>
-                <dd className="text-white">{v}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
+				{/* C. 예상 기상 조건 */}
+				<p className="mb-4 text-sm font-semibold text-white">예상 기상 조건</p>
+				<div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+					<div>
+						<label className={fieldLabel}>기온 (℃)</label>
+						<input
+							type="number"
+							value={temperature}
+							onChange={(e) => setTemperature(Number(e.target.value))}
+							className={fieldInput}
+						/>
+					</div>
+					<div>
+						<label className={fieldLabel}>습도 (%)</label>
+						<input
+							type="number"
+							value={humidity}
+							onChange={(e) => setHumidity(Number(e.target.value))}
+							className={fieldInput}
+						/>
+					</div>
+					<div>
+						<label className={fieldLabel}>강수량 (mm)</label>
+						<input
+							type="number"
+							step="0.1"
+							value={rainfall}
+							onChange={(e) => setRainfall(Number(e.target.value))}
+							className={fieldInput}
+						/>
+					</div>
+					<div>
+						<label className={fieldLabel}>풍속 (m/s)</label>
+						<input
+							type="number"
+							step="0.1"
+							value={windSpeed}
+							onChange={(e) => setWindSpeed(Number(e.target.value))}
+							className={fieldInput}
+						/>
+					</div>
+				</div>
 
-        <Button variant="cyan" size="lg" className="w-full" onClick={handleRun} disabled={loading}>
-          <Sparkles className="h-4 w-4" />
-          수요예측 실행
-        </Button>
-      </div>
+				{/* 예측에 사용되는 데이터 요약 */}
+				<div className="mb-6 rounded-lg border border-border bg-black/20 p-4">
+					<p className="mb-3 text-sm font-semibold text-white">
+						예측에 사용되는 데이터
+					</p>
+					<dl className="space-y-2 text-sm">
+						{[
+							["대여소", selectedStation?.name ?? "-"],
+							["지역", selectedStation?.district ?? "-"],
+							["날짜", date],
+							["시간", `${String(hour).padStart(2, "0")}:00`],
+							["요일", dateFeatures?.dayOfWeekLabel ?? "-"],
+							["주말 여부", dateFeatures?.isWeekend ? "주말" : "평일"],
+							["기온", `${temperature}℃`],
+							["습도", `${humidity}%`],
+							["강수량", `${rainfall}mm`],
+							["풍속", `${windSpeed}m/s`],
+						].map(([k, v]) => (
+							<div key={k} className="flex items-center justify-between">
+								<dt className="text-gray-400">{k}</dt>
+								<dd className="text-white">{v}</dd>
+							</div>
+						))}
+					</dl>
+				</div>
 
-      {loading && <Loading label="AI가 수요를 예측하는 중..." />}
-    </div>
-  );
+				<Button
+					variant="cyan"
+					size="lg"
+					className="w-full"
+					onClick={handleRun}
+					disabled={loading || !stationId}
+				>
+					<Sparkles className="h-4 w-4" />
+					수요예측 실행
+				</Button>
+			</div>
+
+			{loading && <Loading label="AI가 수요를 예측하는 중..." />}
+		</div>
+	);
 }
