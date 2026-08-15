@@ -4,3 +4,4 @@ venv
 /venv/__pychache__
 /ML/data
 /ML/models
+.vscode
