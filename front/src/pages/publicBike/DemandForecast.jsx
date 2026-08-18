@@ -17,9 +17,8 @@ import { deriveDateFeatures } from "../../utils/forecastFeatures";
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => h);
 const todayISODate = () => new Date().toISOString().slice(0, 10);
 
-// ===== 수정 시작: mockData(FORECAST_STATIONS) 대신 실제 학습된 모델 2개를 조합해서 예측 =====
-// station_demand_model.pkl (대여소별 기본 패턴) x weather_effect_model_202606.pkl (날씨 배율)
-// 대여소 목록도 더 이상 mockData.js가 아니라 실제 station_master.csv 기반 백엔드에서 가져온다.
+// 대여소 현황(StationStatus.jsx) 페이지가 "어느 대여소 기준으로 볼지" 읽어가는 공유 key
+const LAST_SELECTED_STATION_KEY = "pedalup_last_station_id";
 
 const LEVEL_STYLES = {
 	높음: {
@@ -61,7 +60,7 @@ export default function DemandForecast() {
 	const [district, setDistrict] = useState("");
 	const [stations, setStations] = useState([]);
 	const [stationId, setStationId] = useState(null);
-	const [stationsLoading, setStationsLoading] = useState(true);
+	const [stationsLoading, setStationsLoading] = useState(false);
 
 	const [date, setDate] = useState(todayISODate());
 	const [hour, setHour] = useState(new Date().getHours());
@@ -79,7 +78,7 @@ export default function DemandForecast() {
 	const selectedStation =
 		stations.find((s) => s.station_id === stationId) ?? null;
 
-	// 최초 진입 시 구 목록 로드
+	// 최초 진입 시 구 목록만 로드 (대여소는 아직 안 불러옴)
 	useEffect(() => {
 		publicBikeService
 			.getForecastDistricts()
@@ -87,11 +86,17 @@ export default function DemandForecast() {
 			.catch(() => setDistricts([]));
 	}, []);
 
-	// 구를 고르면(또는 처음 진입 시) 그 구의 대여소 목록을 불러옴
+	// ===== 수정: 구를 선택했을 때만 그 구의 대여소 목록을 불러옴 =====
+	// district가 빈 값이면(아직 선택 안 함) 대여소 목록/선택을 비워두고 API 호출도 안 함
 	useEffect(() => {
+		if (!district) {
+			setStations([]);
+			setStationId(null);
+			return;
+		}
 		setStationsLoading(true);
 		publicBikeService
-			.getForecastStations(district || undefined)
+			.getForecastStations(district)
 			.then((list) => {
 				setStations(list);
 				setStationId(list[0]?.station_id ?? null);
@@ -102,6 +107,7 @@ export default function DemandForecast() {
 			})
 			.finally(() => setStationsLoading(false));
 	}, [district]);
+	// ===== 수정 끝 =====
 
 	const handleRun = async () => {
 		if (!stationId) return;
@@ -121,6 +127,9 @@ export default function DemandForecast() {
 			});
 			setResult(data);
 			setResultOpen(true);
+			// ===== 추가: 대여소 현황 페이지가 이 대여소를 기준으로 보여주도록 저장 =====
+			localStorage.setItem(LAST_SELECTED_STATION_KEY, String(stationId));
+			// ===== 추가 끝 =====
 		} catch (err) {
 			const message =
 				err.response?.data?.detail?.[0]?.msg ||
@@ -138,13 +147,12 @@ export default function DemandForecast() {
 	const barPct = result
 		? Math.min(100, Math.round(result.capacity_ratio * 100))
 		: 0;
-	// ===== 수정 끝 =====
 
 	return (
 		<div>
 			<p className="mb-1 text-sm font-semibold text-bike">AI 예측</p>
 			<h2 className="mb-6 text-2xl font-extrabold text-white">
-				대여소별 수요·혼잡도 예측
+				수요·혼잡도 예측
 			</h2>
 
 			{!loading && result && (
@@ -255,7 +263,7 @@ export default function DemandForecast() {
 			)}
 
 			<div className="rounded-xl border border-border bg-card p-6">
-				{/* A. 대여소 (실제 station_master.csv 기반) */}
+				{/* A. 대여소 (실제 station_master 기반) */}
 				<p className="mb-4 text-sm font-semibold text-white">대여소</p>
 				<div className="mb-3 grid grid-cols-2 gap-3">
 					<div>
@@ -265,7 +273,8 @@ export default function DemandForecast() {
 							onChange={(e) => setDistrict(e.target.value)}
 							className={fieldInput}
 						>
-							<option value="">전체</option>
+							{/* ===== 수정: "전체" 옵션 제거 - 반드시 구를 선택해야 진행 가능 ===== */}
+							<option value="">지역(구) 선택</option>
 							{districts.map((d) => (
 								<option key={d} value={d}>
 									{d}
@@ -279,25 +288,40 @@ export default function DemandForecast() {
 							value={stationId ?? ""}
 							onChange={(e) => setStationId(Number(e.target.value))}
 							className={fieldInput}
-							disabled={stationsLoading || stations.length === 0}
+							disabled={!district || stationsLoading || stations.length === 0}
 						>
-							{stationsLoading && <option>불러오는 중...</option>}
-							{!stationsLoading && stations.length === 0 && (
+							{/* ===== 수정: 구를 아직 안 골랐으면 안내 문구만 표시하고 목록은 비움 ===== */}
+							{!district && <option>-</option>}
+							{district && stationsLoading && <option>불러오는 중...</option>}
+							{district && !stationsLoading && stations.length === 0 && (
 								<option>대여소 없음</option>
 							)}
-							{stations.map((s) => (
-								<option key={s.station_id} value={s.station_id}>
-									{s.name}
-								</option>
-							))}
+							{district &&
+								!stationsLoading &&
+								stations.map((s) => (
+									<option key={s.station_id} value={s.station_id}>
+										{s.name}
+									</option>
+								))}
 						</select>
 					</div>
 				</div>
 				<div className="mb-6 grid grid-cols-2 gap-3">
+					{/* ===== 수정: "구"만 보여주던 것을 "구 + 동"까지 함께 보여주도록 변경 =====
+					   selectedStation.dong 은 백엔드(station_master)가 대여소 주소에서
+					   추출한 실제 동 이름을 내려줄 때 채워집니다. 아직 dong 필드가 없으면
+					   구만 표시하고, 그마저 없으면 "-"를 표시합니다. */}
 					<ReadOnlyField
 						label="지역"
-						value={selectedStation?.district ?? "-"}
+						value={
+							selectedStation
+								? [selectedStation.district, selectedStation.dong]
+										.filter(Boolean)
+										.join(" ")
+								: "-"
+						}
 					/>
+					{/* ===== 수정 끝 ===== */}
 					<ReadOnlyField
 						label="대여소 정원"
 						value={selectedStation ? `${selectedStation.rack_count}대` : "-"}
@@ -393,7 +417,14 @@ export default function DemandForecast() {
 					<dl className="space-y-2 text-sm">
 						{[
 							["대여소", selectedStation?.name ?? "-"],
-							["지역", selectedStation?.district ?? "-"],
+							[
+								"지역",
+								selectedStation
+									? [selectedStation.district, selectedStation.dong]
+											.filter(Boolean)
+											.join(" ")
+									: "-",
+							],
 							["날짜", date],
 							["시간", `${String(hour).padStart(2, "0")}:00`],
 							["요일", dateFeatures?.dayOfWeekLabel ?? "-"],

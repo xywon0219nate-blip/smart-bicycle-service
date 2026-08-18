@@ -32,13 +32,19 @@ async function getBikeRoutes() {
 }
 
 // 향후 FastAPI: GET /api/bike/seoul/stations
-async function getStations() {
-	try {
-		const { data } = await api.get("/bike/seoul/stations");
-		return data;
-	} catch {
-		return { stations: STATIONS_MOCK, hourlyUsage: HOURLY_USAGE };
-	}
+// async function getStations() {
+// 	try {
+// 		const { data } = await api.get("/bike/seoul/stations");
+// 		return data;
+// 	} catch {
+// 		return { stations: STATIONS_MOCK, hourlyUsage: HOURLY_USAGE };
+// 	}
+// }
+async function getStations(stationId) {
+	const { data } = await api.get("/bike/seoul/stations", {
+		params: stationId ? { station_id: stationId } : {},
+	});
+	return data;
 }
 
 // 향후 FastAPI: GET /api/ai/bike/analysis
@@ -94,19 +100,23 @@ async function getForecast({
 	return data;
 }
 
-// 향후 FastAPI: GET /api/bike/seoul/districts — 대여소 검색용 구(區) 목록
+// ===== 수정 시작: 기존 getStations()(StationStatus.jsx용, /bike/seoul/stations)와
+// 경로가 겹쳐서 응답 형태 충돌이 났던 문제 수정. 예측용 경로를 /ai/bike/...로 분리.
+
+// 향후 FastAPI: GET /api/ai/bike/districts — 대여소 검색용 구(區) 목록
 async function getForecastDistricts() {
-	const { data } = await api.get("/bike/seoul/districts");
+	const { data } = await api.get("/ai/bike/districts");
 	return data;
 }
 
-// 향후 FastAPI: GET /api/bike/seoul/stations — 실제 대여소 목록(station_master.csv 기반)
+// 향후 FastAPI: GET /api/ai/bike/stations — 실제 대여소 목록(station_master.csv 기반)
 async function getForecastStations(district) {
-	const { data } = await api.get("/bike/seoul/stations", {
+	const { data } = await api.get("/ai/bike/stations", {
 		params: district ? { district, limit: 200 } : { limit: 200 },
 	});
 	return data;
 }
+// ===== 수정 끝 =====
 
 // 향후 FastAPI: POST /api/ai/bike/station-forecast
 // station_demand_model(대여소 패턴) x weather_effect_model(날씨 배율)을 조합한 대여소별 예측

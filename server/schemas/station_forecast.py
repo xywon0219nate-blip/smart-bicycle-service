@@ -6,10 +6,10 @@ class StationInfo(BaseModel):
    name: str
    district: str
    rack_count: int
+   latitude: float
+   longitude: float
 
 
-# date는 "YYYY-MM-DD" 문자열로 받아서 서버에서 day_of_week/is_weekend를 파생시킴
-# (bike_demand_model 연동 때와 동일한 이유: 파생 로직을 한 곳에만 두기 위함)
 class StationForecastRequest(BaseModel):
    station_id: int
    date: str
