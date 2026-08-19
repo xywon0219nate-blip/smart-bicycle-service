@@ -33,11 +33,6 @@ export default function Login() {
 		return Object.keys(next).length === 0;
 	};
 
-	// ===== 수정 시작: 로그인 실패 시 서버가 보낸 진짜 에러 메시지를 화면에 표시 =====
-	// 기존에는 login()이 실패해도 mock 유저로 조용히 성공 처리되어서
-	// navigate(ROUTES.DASHBOARD)가 항상 실행됐음.
-	// 이제 login()이 실패하면 진짜로 에러를 던지므로, catch에서 그 에러 메시지를
-	// 꺼내 화면에 보여주고 dashboard로는 이동하지 않도록 처리.
 	const handleSubmit = async (e) => {
 		e.preventDefault();
 		if (!validate()) return;
@@ -55,7 +50,6 @@ export default function Login() {
 			setIsSubmitting(false);
 		}
 	};
-	// ===== 수정 끝 =====
 
 	const handleSocial = async (provider) => {
 		await provider();
@@ -157,13 +151,11 @@ export default function Login() {
 							</button>
 						</div>
 
-						{/* ===== 수정 시작: 로그인 실패 메시지 표시 영역 ===== */}
 						{errors.form && (
 							<p className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400">
 								{errors.form}
 							</p>
 						)}
-						{/* ===== 수정 끝 ===== */}
 
 						<Button type="submit" disabled={isSubmitting} className="w-full">
 							로그인

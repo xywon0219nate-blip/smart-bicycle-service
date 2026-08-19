@@ -36,7 +36,6 @@ async function loginWithGoogle() {
 async function loginWithKakao() {
 	return { accessToken: "mock-oauth-token", user: OAUTH_MOCK_USER };
 }
-// ===== 수정 끝 =====
 
 async function logout() {
 	await api.post("/auth/logout");
