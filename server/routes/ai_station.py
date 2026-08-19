@@ -308,6 +308,92 @@ def _require_analysis():
 
 
 @station_ai_router.get("/ai/bike/analysis", response_model=StationAnalysisResponse)
-async def get_analysis():
+async def get_analysis(
+   year: Optional[int] = Query(None, description="조회할 연도 (예: 2026). year/month 둘 다 없으면 데이터상 가장 최근 달을 반환"),
+   month: Optional[int] = Query(None, ge=1, le=12, description="조회할 월 (1~12)"),
+):
    _require_analysis()
-   return StationAnalysisResponse(**_analysis_data)
+
+   monthly_usage = _analysis_data["monthlyUsage"]  # 노트북에서 시간순 정렬해 저장한 전체 기간 [{month, count}, ...]
+   by_month = _analysis_data["byMonth"]
+
+   if year is not None and month is not None:
+      selected = f"{year:04d}-{month:02d}"
+   else:
+      selected = monthly_usage[-1]["month"]  # 기본값: 보유 데이터 중 가장 최근 달
+
+   if selected not in by_month:
+      raise HTTPException(
+         status_code=404,
+         detail=f"{selected} 데이터가 없습니다. 조회 가능한 기간을 확인해주세요.",
+      )
+
+   # 선택한 달까지의 "최근 12개월" 추이 (보유 데이터가 12개월 미만이면 있는 만큼만)
+   idx = next(i for i, item in enumerate(monthly_usage) if item["month"] == selected)
+   window = monthly_usage[max(0, idx - 11): idx + 1]
+
+   month_detail = by_month[selected]
+
+   # ===== 수정: 인사이트를 "전체 기간 고정"이 아니라 선택한 달 기준으로 매번 새로 생성.
+   # 재료(전/전월 건수, 그 달 TOP 대여소/연령대)는 이미 window와 byMonth에 있으므로
+   # 노트북을 다시 돌릴 필요 없이 여기서 바로 계산 가능. =====
+   current_month = window[-1]
+   previous_month = window[-2] if len(window) >= 2 else None
+
+   if previous_month and previous_month["count"] > 0:
+      diff_pct = round((current_month["count"] - previous_month["count"]) / previous_month["count"] * 100, 1)
+      is_up = diff_pct >= 0
+      trend_insight = {
+         "tag": "월별 트렌드",
+         "icon": "TrendingUp" if is_up else "TrendingDown",
+         "title": "전월 대비 이용량",
+         "description": f"전월({previous_month['month']}) 대비 이용량이 {'증가' if is_up else '감소'}했습니다 ({diff_pct:+.1f}%).",
+         "metricLabel": "전월 대비",
+         "metricValue": f"{diff_pct:+.1f}%",
+         "tone": "up" if is_up else "down",
+      }
+   else:
+      # 데이터상 가장 첫 달이라 비교할 전월이 없는 경우
+      trend_insight = {
+         "tag": "월별 트렌드",
+         "icon": "TrendingUp",
+         "title": "이번 달 이용량",
+         "description": f"{current_month['month']} 이용 건수는 {current_month['count']:,}건입니다 (비교 가능한 전월 데이터 없음).",
+         "metricLabel": "이용건수",
+         "metricValue": f"{current_month['count']:,}건",
+         "tone": "neutral",
+      }
+
+   top_station = month_detail["topStations"][0]
+   top_age = month_detail["ageDistribution"][0]
+
+   insights = [
+      trend_insight,
+      {
+         "tag": "대여소 순위",
+         "icon": "MapPin",
+         "title": "이 달 최고 인기 대여소",
+         "description": f"'{top_station['name']}'이(가) {selected} 기준 가장 많이 이용됐습니다 ({top_station['count']:,}건).",
+         "metricLabel": "이용건수",
+         "metricValue": f"{top_station['count']:,}건",
+         "tone": "neutral",
+      },
+      {
+         "tag": "이용자 분석",
+         "icon": "Users",
+         "title": "이 달 주 이용 연령대",
+         "description": f"'{top_age['age']}' 연령대가 {selected} 이용의 {top_age['percent']}%를 차지합니다.",
+         "metricLabel": "비중",
+         "metricValue": f"{top_age['percent']}%",
+         "tone": "neutral",
+      },
+   ]
+   # ===== 수정 끝 =====
+
+   return StationAnalysisResponse(
+      periodLabel=f"{window[0]['month']} ~ {window[-1]['month']}",
+      monthlyUsage=window,
+      topStations=month_detail["topStations"],
+      ageDistribution=month_detail["ageDistribution"],
+      insights=insights,
+   )

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AreaChartCard from "../../components/charts/AreaChartCard";
 import BarChartCard from "../../components/charts/BarChartCard";
 import InsightCard from "../../components/cards/InsightCard";
@@ -7,19 +7,91 @@ import publicBikeService from "../../services/publicBikeService";
 
 export default function AIAnalysis() {
 	const [data, setData] = useState(null);
+	const [availableMonths, setAvailableMonths] = useState([]); // 최초 응답의 monthlyUsage를 드롭다운 선택지로 재사용
+	const [selected, setSelected] = useState(null); // { year, month }
+	const isFirstSelect = useRef(true); // 최초 로드가 이미 이 달 데이터를 갖고 있으므로, 첫 재요청은 건너뜀
 
+	// 최초 1회: 파라미터 없이 호출 -> 서버가 "가장 최근 달" 기준으로 응답
 	useEffect(() => {
-		publicBikeService.getAnalysis().then(setData);
+		publicBikeService.getAnalysis().then((res) => {
+			setData(res);
+			setAvailableMonths(res.monthlyUsage);
+			const latest = res.monthlyUsage[res.monthlyUsage.length - 1].month; // "YYYY-MM"
+			const [y, m] = latest.split("-").map(Number);
+			setSelected({ year: y, month: m });
+		});
 	}, []);
 
-	if (!data) return <Loading />;
+	// 연/월 선택이 바뀔 때 재요청 (단, 최초 setSelected로 인한 첫 실행은 중복 호출이라 스킵)
+	useEffect(() => {
+		if (!selected) return;
+		if (isFirstSelect.current) {
+			isFirstSelect.current = false;
+			return;
+		}
+		publicBikeService.getAnalysis(selected).then(setData);
+	}, [selected]);
+
+	if (!data || !selected) return <Loading />;
+
+	const years = [
+		...new Set(availableMonths.map((m) => Number(m.month.split("-")[0]))),
+	];
+	const monthsByYear = availableMonths.reduce((acc, m) => {
+		const [y, mo] = m.month.split("-").map(Number);
+		(acc[y] ||= []).push(mo);
+		return acc;
+	}, {});
+	const monthsForSelectedYear = monthsByYear[selected.year] || [];
 
 	return (
 		<div>
-			<p className="mb-1 text-sm font-semibold text-bike">연간 트렌드</p>
-			<h2 className="mb-6 text-2xl font-extrabold text-white">
-				{data.periodLabel} 월별 이용 추이
-			</h2>
+			<div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+				<div>
+					<p className="mb-1 text-sm font-semibold text-bike">연간 트렌드</p>
+					<h2 className="text-2xl font-extrabold text-white">
+						{data.periodLabel} 월별 이용 추이
+					</h2>
+				</div>
+				<div className="flex gap-2">
+					<select
+						className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-white"
+						value={selected.year}
+						onChange={(e) => {
+							const newYear = Number(e.target.value);
+							const monthsInNewYear = monthsByYear[newYear] || [];
+							// 선택했던 달이 그 연도엔 없을 수 있음 (예: 데이터가 2025-07부터 시작)
+							// -> 있으면 그대로 유지, 없으면 그 연도에서 가장 최근 달로 보정
+							const newMonth = monthsInNewYear.includes(selected.month)
+								? selected.month
+								: monthsInNewYear[monthsInNewYear.length - 1];
+							setSelected({ year: newYear, month: newMonth });
+						}}
+					>
+						{years.map((y) => (
+							<option key={y} value={y}>
+								{y}년
+							</option>
+						))}
+					</select>
+					<select
+						className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-white"
+						value={selected.month}
+						onChange={(e) =>
+							setSelected((prev) => ({
+								...prev,
+								month: Number(e.target.value),
+							}))
+						}
+					>
+						{monthsForSelectedYear.map((m) => (
+							<option key={m} value={m}>
+								{m}월
+							</option>
+						))}
+					</select>
+				</div>
+			</div>
 			<AreaChartCard
 				data={data.monthlyUsage}
 				xKey="month"

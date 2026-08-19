@@ -48,9 +48,12 @@ async function getStations(stationId) {
 }
 
 // 향후 FastAPI: GET /api/ai/bike/analysis
-async function getAnalysis() {
+// year/month를 안 넘기면 서버가 데이터상 가장 최근 달 기준으로 응답함
+async function getAnalysis({ year, month } = {}) {
 	try {
-		const { data } = await api.get("/ai/bike/analysis");
+		const { data } = await api.get("/ai/bike/analysis", {
+			params: year && month ? { year, month } : {},
+		});
 		return data;
 	} catch {
 		return {
