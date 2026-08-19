@@ -100,9 +100,6 @@ async function getForecast({
 	return data;
 }
 
-// ===== 수정 시작: 기존 getStations()(StationStatus.jsx용, /bike/seoul/stations)와
-// 경로가 겹쳐서 응답 형태 충돌이 났던 문제 수정. 예측용 경로를 /ai/bike/...로 분리.
-
 // 향후 FastAPI: GET /api/ai/bike/districts — 대여소 검색용 구(區) 목록
 async function getForecastDistricts() {
 	const { data } = await api.get("/ai/bike/districts");
@@ -116,7 +113,6 @@ async function getForecastStations(district) {
 	});
 	return data;
 }
-// ===== 수정 끝 =====
 
 // 향후 FastAPI: POST /api/ai/bike/station-forecast
 // station_demand_model(대여소 패턴) x weather_effect_model(날씨 배율)을 조합한 대여소별 예측
@@ -140,7 +136,6 @@ async function getStationForecast({
 	});
 	return data;
 }
-// ===== 수정 끝 =====
 
 const publicBikeService = {
 	getSummary,

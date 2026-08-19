@@ -86,7 +86,7 @@ export default function DemandForecast() {
 			.catch(() => setDistricts([]));
 	}, []);
 
-	// ===== 수정: 구를 선택했을 때만 그 구의 대여소 목록을 불러옴 =====
+	// 구를 선택했을 때만 그 구의 대여소 목록을 불러옴
 	// district가 빈 값이면(아직 선택 안 함) 대여소 목록/선택을 비워두고 API 호출도 안 함
 	useEffect(() => {
 		if (!district) {
@@ -127,9 +127,8 @@ export default function DemandForecast() {
 			});
 			setResult(data);
 			setResultOpen(true);
-			// ===== 추가: 대여소 현황 페이지가 이 대여소를 기준으로 보여주도록 저장 =====
+			// 대여소 현황 페이지가 이 대여소를 기준으로 보여주도록 저장
 			localStorage.setItem(LAST_SELECTED_STATION_KEY, String(stationId));
-			// ===== 추가 끝 =====
 		} catch (err) {
 			const message =
 				err.response?.data?.detail?.[0]?.msg ||
@@ -273,7 +272,6 @@ export default function DemandForecast() {
 							onChange={(e) => setDistrict(e.target.value)}
 							className={fieldInput}
 						>
-							{/* ===== 수정: "전체" 옵션 제거 - 반드시 구를 선택해야 진행 가능 ===== */}
 							<option value="">지역(구) 선택</option>
 							{districts.map((d) => (
 								<option key={d} value={d}>
@@ -307,10 +305,6 @@ export default function DemandForecast() {
 					</div>
 				</div>
 				<div className="mb-6 grid grid-cols-2 gap-3">
-					{/* ===== 수정: "구"만 보여주던 것을 "구 + 동"까지 함께 보여주도록 변경 =====
-					   selectedStation.dong 은 백엔드(station_master)가 대여소 주소에서
-					   추출한 실제 동 이름을 내려줄 때 채워집니다. 아직 dong 필드가 없으면
-					   구만 표시하고, 그마저 없으면 "-"를 표시합니다. */}
 					<ReadOnlyField
 						label="지역"
 						value={

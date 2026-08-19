@@ -94,11 +94,6 @@ export default function Dashboard() {
 					<p className="mb-4 text-sm font-semibold text-neon">
 						오늘의 AI 추천 루트
 					</p>
-					{/* ===== 수정 시작: data.recommendedRoute가 null일 수 있어서 방어 코드 추가 =====
-					    기존 코드는 data.recommendedRoute가 항상 존재한다고 가정하고 바로 .id, .image 등을
-					    읽었는데, 백엔드에 아직 추천 루트 기능이 없어 null을 보내는 경우 여기서
-					    "Cannot read properties of null" 에러가 발생했음.
-					    -> data.recommendedRoute가 있을 때만 카드를 렌더링하고, 없으면 안내 문구를 보여주도록 분기 처리 */}
 					{data.recommendedRoute ? (
 						<Link
 							to={ROUTES.routeDetail(data.recommendedRoute.id)}
@@ -133,7 +128,6 @@ export default function Dashboard() {
 							있어요!
 						</div>
 					)}
-					{/* ===== 수정 끝 ===== */}
 
 					<div className="mb-4 flex gap-2 border-b border-border">
 						{ACTIVITY_TABS.map((tab) => (

@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 
 class MonthlyUsageItem(BaseModel):
-    month: str  # "2025-07" 형식 (연-월, 두 연도에 걸친 데이터라 월 숫자만으로는 구분이 안 돼서 이 형식 사용)
+    month: str  # "2025-07" 형식 (연-월, 두 연도에 걸친 데이터라 월 숫자만으로는 구분 X -> 이 형식 사용)
     count: int
 
 

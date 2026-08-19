@@ -2,8 +2,6 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-# 모델이 실제로 학습한 12개 피처와 정확히 이름을 맞춘 요청 스키마.
-# (train_model.py의 원본 컬럼: Seasons -> season, Holiday -> holiday, Functioning Day -> functioning_day)
 class BikeForecastRequest(BaseModel):
    hour: int = Field(..., ge=0, le=23, description="예측 시각 (0~23시)")
    temperature: float = Field(..., description="기온 (섭씨)")

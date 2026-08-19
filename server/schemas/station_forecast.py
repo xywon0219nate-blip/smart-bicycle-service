@@ -7,10 +7,7 @@ class StationInfo(BaseModel):
    station_id: int
    name: str
    district: str
-   # ===== 추가: 1년치 재학습 데이터에 동(dong) 정보가 포함됨 =====
-   # 도로명주소 특성상 아직 약 35%만 채워져 있음 - 없으면 null (프론트에서 "구"만 표시)
    dong: Optional[str] = None
-   # ===== 추가 끝 =====
    rack_count: int
    latitude: float
    longitude: float
@@ -20,14 +17,10 @@ class StationForecastRequest(BaseModel):
    station_id: int
    date: str
    hour: int = Field(..., ge=0, le=23)
-   # ===== 수정: temperature에도 다른 필드처럼 범위 검증을 추가 =====
-   # 1년치(2025-07~2026-06) 재학습 결과, weather_effect_model이 실제로 반응하는
-   # 범위가 -13.1~37.6℃로 크게 넓어짐 (기존 6월 한 달치 때의 22~32℃보다 훨씬 현실적).
-   # 그래도 그 범위 밖은 여전히 조용히 뭉개지므로, 최소한 물리적으로 말이 안 되는
-   # 값(예: -50℃, 200℃)은 API 단에서 먼저 걸러낸다.
-   # 서울의 관측 역사상 극값(-32.6℃ ~ 39.6℃)보다 약간 여유를 둔 범위로 설정.
+   # 1년치(2025-07~2026-06) 범위가 -13.1~37.6로 크게 넓어짐
+   # 물리적으로 말이 안 되는 값(예: -50, 200)은 API 단에서 먼저 걸러냄
+   # 서울의 관측 역사상 극값(-32.6 ~ 39.6)보다 약간 여유를 둔 범위로 설정.
    temperature: float = Field(..., ge=-40, le=50)
-   # ===== 수정 끝 =====
    humidity: int = Field(..., ge=0, le=100)
    rainfall: float = Field(..., ge=0)
    wind_speed: float = Field(..., ge=0)

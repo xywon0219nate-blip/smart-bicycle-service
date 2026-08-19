@@ -17,13 +17,9 @@ export default function AIAnalysis() {
 	return (
 		<div>
 			<p className="mb-1 text-sm font-semibold text-bike">연간 트렌드</p>
-			{/* ===== 수정: "2024년" 하드코딩 -> 실제 학습 데이터 기간(periodLabel)으로 변경 =====
-         지금 데이터는 한 해가 아니라 2025-07~2026-06처럼 두 연도에 걸쳐 있어서
-         "N년"으로 못 박으면 부정확함. 백엔드가 내려주는 periodLabel을 그대로 사용. */}
 			<h2 className="mb-6 text-2xl font-extrabold text-white">
 				{data.periodLabel} 월별 이용 추이
 			</h2>
-			{/* ===== 수정 끝 ===== */}
 			<AreaChartCard
 				data={data.monthlyUsage}
 				xKey="month"

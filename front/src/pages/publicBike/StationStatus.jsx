@@ -18,13 +18,12 @@ export default function StationStatus() {
 	const [baseStationId, setBaseStationId] = useState(null);
 
 	useEffect(() => {
-		// ===== 수정: "내 주변"이 아니라, AI 수요예측에서 마지막으로 선택한 대여소 기준으로 조회 =====
+		// AI 수요예측에서 마지막으로 선택한 대여소 기준 조회
 		const saved = localStorage.getItem(LAST_SELECTED_STATION_KEY);
 		const stationId = saved ? Number(saved) : null;
 		setBaseStationId(stationId);
 
 		publicBikeService.getStations(stationId).then(setData);
-		// ===== 수정 끝 =====
 	}, []);
 
 	if (!data) return <Loading />;
@@ -38,7 +37,6 @@ export default function StationStatus() {
 			<div className="mb-6 flex flex-wrap items-center justify-between gap-4">
 				<div>
 					<p className="text-sm font-semibold text-bike">실시간 현황</p>
-					{/* ===== 수정: "내 주변" -> 선택한 대여소 기준 문구로 변경 ===== */}
 					<h2 className="mt-1 text-2xl font-extrabold text-white">
 						{baseStationName ? `${baseStationName} 주변 대여소` : "대여소 현황"}
 					</h2>
@@ -48,7 +46,6 @@ export default function StationStatus() {
 							보여드려요.
 						</p>
 					)}
-					{/* ===== 수정 끝 ===== */}
 				</div>
 				<div className="flex items-center gap-4 text-xs text-gray-400">
 					{LEGEND.map((item) => (
@@ -68,11 +65,9 @@ export default function StationStatus() {
 
 			<p className="mb-1 text-sm font-semibold text-bike">시간대 분석</p>
 			<h2 className="mb-4 text-2xl font-extrabold text-white">
-				{/* ===== 수정: 어느 대여소의 시간대별 이용량인지 명시 ===== */}
 				{baseStationName
 					? `${baseStationName}의 오늘 시간대별 이용량`
 					: "오늘의 시간대별 이용량"}
-				{/* ===== 수정 끝 ===== */}
 			</h2>
 			<AreaChartCard
 				data={data.hourlyUsage}

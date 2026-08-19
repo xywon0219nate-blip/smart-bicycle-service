@@ -28,10 +28,7 @@ async def login(loginItem: LoginItem,
                      db: Session = Depends(get_db)) -> dict:
    userModel = db.query(UserModel).filter(UserModel.email == loginItem.email).first()
 
-   # ===== 수정 시작: "미가입 이메일"과 "비밀번호 틀림"을 서로 다른 에러로 분리 =====
-   # 기존에는 userModel is None(가입 안 됨)이든 비밀번호가 틀렸든
-   # 무조건 같은 401 + 같은 메시지("이메일 또는 비밀번호가 올바르지 않습니다")를 반환해서
-   # 프론트에서 두 경우를 구분할 방법이 없었음.
+
    if userModel is None:
       raise HTTPException(
          status_code=status.HTTP_404_NOT_FOUND,
@@ -43,7 +40,6 @@ async def login(loginItem: LoginItem,
          status_code=status.HTTP_401_UNAUTHORIZED,
          detail="비밀번호가 올바르지 않습니다.",
       )
-   # ===== 수정 끝 =====
 
    access_token = create_access_token(str(userModel.id), userModel.role)
    refresh_token = create_refresh_token(str(userModel.id), userModel.role)
