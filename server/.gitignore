@@ -6,3 +6,4 @@ venv
 /ML/models
 .vscode
 /ML/fe/T
+.DS_Store
