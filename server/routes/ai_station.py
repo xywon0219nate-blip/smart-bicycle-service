@@ -24,10 +24,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ===== 수정: 파일명이 더 이상 "202606" 한 달치가 아니라, 1년치 학습 기간 태그로 바뀜 =====
-# (노트북의 period_tag와 반드시 일치해야 함. 재학습해서 기간이 바뀌면 이 값만 바꾸면 됩니다.)
 _PERIOD_TAG = "202507_202606"
-# ===== 수정 끝 =====
 
 _station_model = None
 _district_encoder = None
@@ -35,13 +32,9 @@ _weather_model = None
 _weather_ref = None
 _station_master = None
 _MODELS_READY = False
-
-# ===== 추가: "AI 분석" 페이지(월별 추이/인기 대여소/연령대별 비율)용 사전 집계 JSON =====
-# 이건 예측 모델과 무관하게 노트북 24번 셀에서 미리 만들어둔 결과를 그대로 읽기만 함
-# (서버가 요청마다 3,400만 행짜리 원본 로그를 다시 읽지 않도록)
 _analysis_data = None
 _ANALYSIS_READY = False
-# ===== 추가 끝 =====
+
 
 try:
    _station_model = joblib.load(ML_DIR / f"station_demand_model_{_PERIOD_TAG}.pkl")
@@ -60,8 +53,6 @@ try:
          "station_master_%s.csv에서 결측 %d건을 제외했습니다 (원본 %d건 -> %d건).",
          _PERIOD_TAG, excluded, before, len(_station_master),
       )
-   # dong은 아직 34.7%만 채워져 있음(도로명주소 특성상 정상) - 결측이면 None으로 통일해서
-   # 프론트에서 "구 알수없음" 처럼 어색하게 보이지 않고 자연스럽게 숨겨지도록 처리
    if "dong" in _station_master.columns:
       _station_master["dong"] = _station_master["dong"].replace("알수없음", pd.NA)
    _MODELS_READY = True
@@ -72,18 +63,16 @@ except FileNotFoundError as e:
       e, _PERIOD_TAG,
    )
 
-# ===== 추가: 분석 JSON은 예측 모델과 별개로 로드 -> 예측 모델이 없어도 분석 페이지는 동작 가능 =====
 try:
    with open(ML_DIR / f"analysis_summary_{_PERIOD_TAG}.json", encoding="utf-8") as f:
       _analysis_data = json.load(f)
    _ANALYSIS_READY = True
 except FileNotFoundError as e:
    logger.warning(
-      "AI 분석 페이지용 집계 파일을 찾을 수 없어 관련 API가 비활성화됩니다: %s\n"
-      "노트북 24번 셀(analysis_summary_%s.json 저장)을 먼저 실행해주세요.",
+      "AI 분석 페이지용 집계 파일을 찾을 수 없어 관련 API가 비활성화됩니다: %s\n",
       e, _PERIOD_TAG,
    )
-# ===== 추가 끝 =====
+
 
 
 def _require_models():
@@ -124,19 +113,24 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
    return 2 * R * math.asin(math.sqrt(a))
 
 
+def _pct_change(current: float, previous: float) -> Optional[float]:
+   """previous가 0이면(비교 기준이 없으면) None을 돌려줌 -> 프론트에서 화살표를 안 보여줌."""
+   if previous <= 0:
+      return None
+   return round((current - previous) / previous * 100, 1)
+
+
 def _predict_station_demand(station_id: int, row, date, hour: int, temperature: float, humidity: int,
                              rainfall: float, wind_speed: float) -> tuple[float, float]:
    day_of_week = int(date.dayofweek)
    is_weekend = int(day_of_week >= 5)
    district_enc = _encode_district(row.district)
 
-   # ===== 수정: 재학습된 모델이 'month' 피처를 추가로 요구함 (안 넣으면 feature_names_in_ 불일치로 에러) =====
    station_input = pd.DataFrame([{
       "station_id": station_id, "hour": hour, "day_of_week": day_of_week,
       "is_weekend": is_weekend, "rack_count": row.rack_count, "district_enc": district_enc,
       "month": int(date.month),
    }])
-   # ===== 수정 끝 =====
    station_base = float(_station_model.predict(station_input[_station_model.feature_names_in_])[0])
 
    weather_input = pd.DataFrame([{
@@ -158,13 +152,11 @@ def _station_hourly_curve(station_id: int, row, date) -> list[dict]:
    is_weekend = int(day_of_week >= 5)
    district_enc = _encode_district(row.district)
 
-   # ===== 수정: 여기도 동일하게 'month' 피처 추가 =====
    rows = pd.DataFrame([{
       "station_id": station_id, "hour": h, "day_of_week": day_of_week,
       "is_weekend": is_weekend, "rack_count": row.rack_count, "district_enc": district_enc,
       "month": int(date.month),
    } for h in range(24)])
-   # ===== 수정 끝 =====
    preds = _station_model.predict(rows[_station_model.feature_names_in_])
    return [{"hour": f"{h}시", "count": max(0, round(p))} for h, p in enumerate(preds)]
 
@@ -211,6 +203,22 @@ async def forecast_station_demand(req: StationForecastRequest, db: Session = Dep
    rack_count = int(row.rack_count) if row.rack_count else 1
    capacity_ratio = predicted_demand / rack_count if rack_count else 0.0
 
+   day_curve = _station_hourly_curve(req.station_id, row, date)
+   pattern_sum = sum(item["count"] for item in day_curve)
+   daily_total_demand = int(round(pattern_sum * weather_factor))
+
+   prev_date = date - pd.Timedelta(days=1)
+   prev_predicted_raw, _ = _predict_station_demand(
+      req.station_id, row, prev_date, req.hour, req.temperature, req.humidity, req.rainfall, req.wind_speed,
+   )
+   prev_predicted_demand = max(0, round(prev_predicted_raw))
+   hourly_demand_trend_pct = _pct_change(predicted_demand, prev_predicted_demand)
+
+   prev_day_curve = _station_hourly_curve(req.station_id, row, prev_date)
+   prev_pattern_sum = sum(item["count"] for item in prev_day_curve)
+   daily_total_trend_pct = _pct_change(pattern_sum, prev_pattern_sum)
+
+
    if capacity_ratio >= 0.8:
       demand_level, message = "높음", "이 대여소는 해당 시간대 수요가 매우 높을 것으로 예상됩니다. 자전거 재배치를 권장합니다."
    elif capacity_ratio >= 0.5:
@@ -230,6 +238,9 @@ async def forecast_station_demand(req: StationForecastRequest, db: Session = Dep
                            latitude=float(row.latitude), longitude=float(row.longitude)),
       predicted_demand=predicted_demand, capacity_ratio=round(capacity_ratio, 3),
       demand_level=demand_level, weather_factor=round(weather_factor, 3), message=message,
+      daily_total_demand=daily_total_demand,
+      hourly_demand_trend_pct=hourly_demand_trend_pct,
+      daily_total_trend_pct=daily_total_trend_pct,
    )
 
 
@@ -241,11 +252,24 @@ _DEFAULT_WEATHER = {"temperature": 20.0, "humidity": 55, "rainfall": 0.0, "wind_
 async def get_station_status(
    station_id: Optional[int] = Query(None, description="기준 대여소 (AI 수요예측에서 선택한 대여소)"),
    limit: int = Query(6, ge=1, le=50),
+   date: Optional[str] = Query(None, description="기준 날짜 (YYYY-MM-DD). 없으면 오늘"),
+   hour: Optional[int] = Query(None, ge=0, le=23, description="기준 시각. 없으면 현재 시각"),
+   temperature: Optional[float] = Query(None),
+   humidity: Optional[int] = Query(None, ge=0, le=100),
+   rainfall: Optional[float] = Query(None, ge=0),
+   wind_speed: Optional[float] = Query(None, ge=0),
 ):
    _require_models()
 
    now = pd.Timestamp.now()
-   hour = now.hour
+   base_date = pd.to_datetime(date) if date else now
+   base_hour = hour if hour is not None else now.hour
+   weather = {
+      "temperature": temperature if temperature is not None else _DEFAULT_WEATHER["temperature"],
+      "humidity": humidity if humidity is not None else _DEFAULT_WEATHER["humidity"],
+      "rainfall": rainfall if rainfall is not None else _DEFAULT_WEATHER["rainfall"],
+      "wind_speed": wind_speed if wind_speed is not None else _DEFAULT_WEATHER["wind_speed"],
+   }
 
    if station_id is not None:
       matched = _station_master[_station_master.station_id == station_id]
@@ -266,9 +290,9 @@ async def get_station_status(
    stations = []
    for row in nearby.itertuples():
       predicted_raw, _ = _predict_station_demand(
-         int(row.station_id), row, now, hour,
-         _DEFAULT_WEATHER["temperature"], _DEFAULT_WEATHER["humidity"],
-         _DEFAULT_WEATHER["rainfall"], _DEFAULT_WEATHER["wind_speed"],
+         int(row.station_id), row, base_date, base_hour,
+         weather["temperature"], weather["humidity"],
+         weather["rainfall"], weather["wind_speed"],
       )
       total = int(row.rack_count) if row.rack_count else 1
       available = max(0, min(total, round(total - predicted_raw)))
@@ -290,14 +314,13 @@ async def get_station_status(
       ))
 
    hourly_usage = [
-      HourlyUsageItem(**item) for item in _station_hourly_curve(int(center.station_id), center, now)
+      HourlyUsageItem(**item) for item in _station_hourly_curve(int(center.station_id), center, base_date)
    ]
 
    return StationStatusResponse(stations=stations, hourlyUsage=hourly_usage)
 
 
 # ===== "AI 분석" 페이지 — 월별 이용 추이 / 인기 대여소 TOP 6 / 연령대별 이용 비율 =====
-# 예측 모델과 무관하게, 노트북에서 미리 계산해둔 JSON을 그대로 반환만 함 (빠르고 가벼움)
 
 def _require_analysis():
    if not _ANALYSIS_READY:
@@ -334,9 +357,7 @@ async def get_analysis(
 
    month_detail = by_month[selected]
 
-   # ===== 수정: 인사이트를 "전체 기간 고정"이 아니라 선택한 달 기준으로 매번 새로 생성.
-   # 재료(전/전월 건수, 그 달 TOP 대여소/연령대)는 이미 window와 byMonth에 있으므로
-   # 노트북을 다시 돌릴 필요 없이 여기서 바로 계산 가능. =====
+
    current_month = window[-1]
    previous_month = window[-2] if len(window) >= 2 else None
 
@@ -388,7 +409,6 @@ async def get_analysis(
          "tone": "neutral",
       },
    ]
-   # ===== 수정 끝 =====
 
    return StationAnalysisResponse(
       periodLabel=f"{window[0]['month']} ~ {window[-1]['month']}",

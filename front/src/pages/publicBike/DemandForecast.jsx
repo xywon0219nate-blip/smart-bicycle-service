@@ -13,12 +13,10 @@ import Button from "../../components/common/Button";
 import Loading from "../../components/common/Loading";
 import publicBikeService from "../../services/publicBikeService";
 import { deriveDateFeatures } from "../../utils/forecastFeatures";
+import { useBikeForecast } from "../../context/BikeForecastContext";
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => h);
 const todayISODate = () => new Date().toISOString().slice(0, 10);
-
-// 대여소 현황(StationStatus.jsx) 페이지가 "어느 대여소 기준으로 볼지" 읽어가는 공유 key
-const LAST_SELECTED_STATION_KEY = "pedalup_last_station_id";
 
 const LEVEL_STYLES = {
 	높음: {
@@ -55,6 +53,8 @@ function ReadOnlyField({ label, value }) {
 }
 
 export default function DemandForecast() {
+	const { setForecastResult } = useBikeForecast();
+
 	// 대여소 선택 (구 필터 -> 대여소 목록, 둘 다 실제 백엔드에서 로드)
 	const [districts, setDistricts] = useState([]);
 	const [district, setDistrict] = useState("");
@@ -86,8 +86,6 @@ export default function DemandForecast() {
 			.catch(() => setDistricts([]));
 	}, []);
 
-	// 구를 선택했을 때만 그 구의 대여소 목록을 불러옴
-	// district가 빈 값이면(아직 선택 안 함) 대여소 목록/선택을 비워두고 API 호출도 안 함
 	useEffect(() => {
 		if (!district) {
 			setStations([]);
@@ -107,7 +105,6 @@ export default function DemandForecast() {
 			})
 			.finally(() => setStationsLoading(false));
 	}, [district]);
-	// ===== 수정 끝 =====
 
 	const handleRun = async () => {
 		if (!stationId) return;
@@ -127,8 +124,21 @@ export default function DemandForecast() {
 			});
 			setResult(data);
 			setResultOpen(true);
-			// 대여소 현황 페이지가 이 대여소를 기준으로 보여주도록 저장
-			localStorage.setItem(LAST_SELECTED_STATION_KEY, String(stationId));
+			setForecastResult({
+				stationId,
+				summary: {
+					date,
+					hour,
+					stationName: data.station.name,
+					dailyTotal: data.daily_total_demand,
+					hourlyDemand: data.predicted_demand,
+					capacityRatio: data.capacity_ratio,
+					demandLevel: data.demand_level,
+					dailyTotalTrendPct: data.daily_total_trend_pct,
+					hourlyDemandTrendPct: data.hourly_demand_trend_pct,
+				},
+				params: { date, hour, temperature, humidity, rainfall, windSpeed },
+			});
 		} catch (err) {
 			const message =
 				err.response?.data?.detail?.[0]?.msg ||
@@ -288,7 +298,6 @@ export default function DemandForecast() {
 							className={fieldInput}
 							disabled={!district || stationsLoading || stations.length === 0}
 						>
-							{/* ===== 수정: 구를 아직 안 골랐으면 안내 문구만 표시하고 목록은 비움 ===== */}
 							{!district && <option>-</option>}
 							{district && stationsLoading && <option>불러오는 중...</option>}
 							{district && !stationsLoading && stations.length === 0 && (
@@ -315,7 +324,6 @@ export default function DemandForecast() {
 								: "-"
 						}
 					/>
-					{/* ===== 수정 끝 ===== */}
 					<ReadOnlyField
 						label="대여소 정원"
 						value={selectedStation ? `${selectedStation.rack_count}대` : "-"}

@@ -40,9 +40,28 @@ async function getBikeRoutes() {
 // 		return { stations: STATIONS_MOCK, hourlyUsage: HOURLY_USAGE };
 // 	}
 // }
-async function getStations(stationId) {
+
+async function getStations(stationId, forecastParams) {
 	const { data } = await api.get("/bike/seoul/stations", {
-		params: stationId ? { station_id: stationId } : {},
+		params: {
+			...(stationId ? { station_id: stationId } : {}),
+			...(forecastParams?.date ? { date: forecastParams.date } : {}),
+			...(forecastParams?.hour !== undefined && forecastParams?.hour !== null
+				? { hour: forecastParams.hour }
+				: {}),
+			...(forecastParams?.temperature !== undefined
+				? { temperature: forecastParams.temperature }
+				: {}),
+			...(forecastParams?.humidity !== undefined
+				? { humidity: forecastParams.humidity }
+				: {}),
+			...(forecastParams?.rainfall !== undefined
+				? { rainfall: forecastParams.rainfall }
+				: {}),
+			...(forecastParams?.windSpeed !== undefined
+				? { wind_speed: forecastParams.windSpeed }
+				: {}),
+		},
 	});
 	return data;
 }
